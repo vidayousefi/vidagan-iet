@@ -18,10 +18,10 @@ from torch.optim import Adam
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from data.augment import Augmentation
-from misc.utils import bits_to_bytearray, bytearray_to_text, ssim, text_to_bits, linear_fit
-from models.gan import MainGan
-from optimization.scheduler import CustomScheduler, SchedulerStage
+from codes.data.augment import Augmentation
+from codes.misc.utils import bits_to_bytearray, bytearray_to_text, ssim, text_to_bits, linear_fit
+from codes.models.gan import MainGan
+from codes.optimization.scheduler import CustomScheduler, SchedulerStage
 
 METRIC_FIELDS = [
     'val.encoder_mse',

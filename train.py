@@ -5,12 +5,12 @@ import os
 import torch
 from torch.utils.data import DataLoader
 
-from data.augment import Augmentation
-from misc.utils import get_unique_file
-from models.coders.dense_coder import CSPDenseCoder
-from models.trainer import Trainer
-from models.critics import BasicCritic
-from data.loader import Div2kDataset
+from codes.data.augment import Augmentation
+from codes.misc.utils import get_unique_file
+from codes.models.coders.dense_coder import CSPDenseCoder
+from codes.models.trainer import Trainer
+from codes.models.critics import BasicCritic
+from codes.data.loader import Div2kDataset
 
 
 def prepare_data(data_dir):
