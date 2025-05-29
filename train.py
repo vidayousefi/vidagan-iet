@@ -15,9 +15,9 @@ from codes.data.loader import Div2kDataset
 
 def prepare_data(data_dir):
     train_data = Div2kDataset(os.path.join(data_dir, "train", "_"), Augmentation.train_transform)
-    train = DataLoader(train_data, batch_size=4, num_workers=8, shuffle=True)
+    train = DataLoader(train_data, batch_size=4, num_workers=4, shuffle=True)
     validation_data = Div2kDataset(os.path.join(data_dir, "val", "_"), Augmentation.val_transform)
-    validation = DataLoader(validation_data, batch_size=4, num_workers=8, shuffle=False)
+    validation = DataLoader(validation_data, batch_size=4, num_workers=4, shuffle=False)
     return train, validation
 
 
@@ -39,6 +39,8 @@ def main():
     args = parse_args()
 
     results_dir = 'results'
+    if not os.path.isdir(results_dir):
+        os.makedirs(results_dir)
 
     data_dir = os.path.join('dataset', args.dataset)
     log_dir = os.path.join(results_dir, get_unique_file('results', 100))
