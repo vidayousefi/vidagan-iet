@@ -31,6 +31,33 @@ from codes.optimization.scheduler import CustomScheduler, SchedulerStage
 
 
 class Inferer(object):
+    """
+    Inferer is a utility class for performing inference with a trained MainGan model, specifically for steganography tasks.
+    It provides methods to encode messages into images (stego images), decode messages from images, and generate random stego samples.
+        model_file (str): Path to the trained model weights file.
+        data_depth (int): Depth of the payload data to be embedded.
+        coder (nn.Module): The encoder module for the GAN.
+        critic (nn.Module): The critic/discriminator module for the GAN.
+    Attributes:
+        device (str): The device used for computation ("cuda" or "cpu").
+        model (MainGan): The GAN model used for encoding and decoding.
+        data_depth (int): The depth of the payload data.
+    Methods:
+        create_random_stegos(dataloader, dest_path, file_type="jpg"):
+            Generates and saves stego images from a dataloader using the model's encoder.
+        _forward_coders(cover, quantize=False):
+            Passes cover images through the encoder and decoder, returning stego images, payloads, and decoded outputs.
+        _forward_encoder(cover, quantize):
+            Encodes a cover image with a random payload, optionally quantizing the output.
+        encode(cover, output, text):
+            Encodes a given text message into a cover image and saves the resulting stego image.
+        decode(image):
+            Decodes and retrieves the hidden message from a stego image.
+        _random_payload(size):
+            Generates a random binary payload tensor of the specified size.
+        _make_payload_by_text(width, height, depth, text):
+            Converts a text message into a bit vector and fills a tensor of the specified shape with the message bits.
+    """
 
     # ============================================== Lifecycle =======================================
 
@@ -44,6 +71,20 @@ class Inferer(object):
     # ============================================== Samples =======================================
 
     def create_random_stegos(self, dataloader, dest_path, file_type="jpg"):
+        """
+        Generates and saves stego images from a given dataloader using the model's encoder.
+
+        Args:
+            dataloader (torch.utils.data.DataLoader): DataLoader providing batches of cover images.
+            dest_path (str): Directory path where the generated stego images will be saved.
+            file_type (str, optional): File extension/type for the saved images (e.g., "jpg", "png"). Defaults to "jpg".
+
+        Notes:
+            - The method sets the model to evaluation mode and disables gradient computation.
+            - Each batch of cover images is processed by the encoder to produce stego images.
+            - Each stego image is clamped to the valid range, converted to a NumPy array, and saved to disk.
+            - Images are saved with filenames based on their index in the dataset.
+        """
         self.model.eval()
         with torch.no_grad():
             for batch_idx, cover in enumerate(tqdm(dataloader)):
@@ -75,49 +116,6 @@ class Inferer(object):
             stego = (255.0 * (stego + 1.0) / 2.0).long()
             stego = 2.0 * stego.float() / 255.0 - 1.0
         return stego, payload
-
-    def _forward_critic(self, image):
-        """Evaluate the image using the critic"""
-        return torch.mean(self.model.critic(image))
-
-    # ============================================== Loss =======================================
-
-    @staticmethod
-    def _coders_loss(cover, generated, payload, decoded):
-        encoder_mse = mse_loss(generated, cover)
-        decoder_loss = binary_cross_entropy_with_logits(decoded, payload)
-        decoder_sigmoid = sigmoid(decoded)
-        soft_label_loss = 0.15 * ((decoder_sigmoid * 2 - 1) ** 4).mean()
-        decoder_loss = decoder_loss + soft_label_loss
-        decoder_acc = (decoded >= 0.0).eq(
-            payload >= 0.5
-        ).sum().float() / payload.numel()
-
-        return encoder_mse, decoder_loss, decoder_acc
-
-    def _calc_encoder_ratio(self, encoder_mse, tgt, smoother):
-        target_mse = math.log(tgt, 10)
-        mse_hist = self.encoder_mse_history
-        mse_hist.append(math.log(encoder_mse.item(), 10))
-        points_count = 80
-        if len(mse_hist) < points_count:
-            self.ratio = 0.01
-        else:
-            mse_hist = mse_hist[-points_count:]
-
-            xs = 0.2
-            mp, bp = linear_fit([i * xs for i in range(points_count)], mse_hist)
-            mp = min(max(mp, -1), 1)
-            # mt, bt = linear_fit(
-            #     [(points_count - 1) / 2 * xs, ((points_count - 1) / 2 + 60 * (6 if smoother else 2)) * xs],
-            #     [sum(mse_hist) / points_count, target_mse])
-            mt, bt = linear_fit(
-                [(points_count - 1) / 2 * xs, ((points_count - 1) / 2 + 60 * 2) * xs],
-                [sum(mse_hist) / points_count, target_mse],
-            )
-            mt = min(max(mt, -1), 1)
-            self.ratio *= 1 + (mt - mp)
-            self.ratio = min(max(self.ratio, 0.005), 2)
 
     # ============================================== Prediction =======================================
 
@@ -158,83 +156,6 @@ class Inferer(object):
         candidate, count = candidates.most_common(1)[0]
         return candidate
 
-    # ============================================== Optimiser =======================================
-
-    def _get_optimizers(
-        self, lr, weight_decay, start_epoch, total_epochs, iters_per_epoch
-    ):
-        critic_optimizer, critic_scheduler = self._create_optimizer(
-            self.model.critic_params(),
-            lr,
-            weight_decay,
-            start_epoch,
-            total_epochs,
-            iters_per_epoch,
-        )
-
-        decoder_optimizer, decoder_scheduler = self._create_optimizer(
-            self.model.coder_params(),
-            lr,
-            weight_decay,
-            start_epoch,
-            total_epochs,
-            iters_per_epoch,
-        )
-
-        return critic_optimizer, critic_scheduler, decoder_optimizer, decoder_scheduler
-
-    @staticmethod
-    def _create_optimizer(
-        parameters, lr, weight_decay, start_epoch, total_epochs, iters_per_epoch
-    ):
-        # if total_iterations > 0 and warmup_iterations > 0:
-        #     optimizer = SGD(parameters, lr=lr, weight_decay=weight_decay, momentum=0.9, nesterov=True)
-        #     if warmup_iterations > 0:
-        #         scheduler = LambdaLR(
-        #             optimizer, lambda i: min(i / warmup_iterations, 1) * cos(
-        #                 max(i, warmup_iterations) / total_iterations * pi / 2))
-        #     else:
-        #         scheduler = CosineAnnealingLR(optimizer, total_iterations)
-        # else:
-        #     optimizer = Adam(parameters, lr=lr, weight_decay=weight_decay)
-        #     if warmup_iterations > 0:
-        #         scheduler = LambdaLR(
-        #             optimizer, lambda i: min(i / warmup_iterations, 1) * cos(
-        #                 max(i, warmup_iterations) / total_iterations * pi / 2))
-        #     else:
-        #         scheduler = CosineAnnealingLR(optimizer, total_iterations)
-        #     # scheduler = ConstantLR(optimizer, factor=1, total_iters=total_iterations)
-        optimizer = Adam(parameters, lr=lr, weight_decay=weight_decay)
-        scheduler = CustomScheduler(
-            optimizer,
-            [
-                SchedulerStage("linear", (0.1, 1), 1),
-                SchedulerStage("linear", (1, 0.75), 2, True),
-                # SchedulerStage('constant', 1, 2, True),
-                # SchedulerStage('constant', 1, 2, True),
-                # SchedulerStage('linear', (1, 0.3), 10),
-                # SchedulerStage('linear', (0.3, 1), 12),
-                # SchedulerStage('constant', 1, 14, True),
-                # SchedulerStage('linear', (1, 0.3), 16),
-                # SchedulerStage('linear', (0.3, 1), 18),
-                # SchedulerStage('cosine', 1, 2, True),
-            ],
-            total_epochs,
-            iters_per_epoch,
-            start_epoch,
-        )
-
-        return optimizer, scheduler
-
-    # ============================================== Logging =======================================
-
-    @staticmethod
-    def log_tensorboard(idx, interval, metrics_list, scores):
-        if idx % interval == 0:
-            for score in scores:
-                lst = metrics_list[score][-interval:]
-                Trainer.writer.add_scalar(score, sum(lst) / len(lst), idx)
-
     # ============================================== Payload =======================================
 
     def _random_payload(self, size):
@@ -256,18 +177,3 @@ class Inferer(object):
         payload = payload[: width * height * depth]
 
         return torch.FloatTensor(payload).view(1, depth, height, width)
-
-    # ============================================== Manipulation =======================================
-
-    def count_parameters(self, model):
-        table = PrettyTable(["Modules", "Parameters"])
-        total_params = 0
-        for name, parameter in model.named_parameters():
-            if not parameter.requires_grad:
-                continue
-            params = parameter.numel()
-            table.add_row([name, params])
-            total_params += params
-        print(table)
-        print(f"Total Trainable Params: {total_params}")
-        return total_params
