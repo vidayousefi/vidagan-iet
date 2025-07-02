@@ -5,3 +5,4 @@ __pycache__/
 .idea/
 dataset/*
 results/
+trained_alaska2_6bit.pth

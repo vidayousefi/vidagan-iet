@@ -56,14 +56,14 @@ class Inferer(object):
 
     # ============================================== Samples =======================================
 
-    def create_random_stegos(self, dataloader, dest_path, file_type="jpg"):
+    def create_random_stegos(self, dataloader, dest_path, file_names):
         """
         Generates and saves stego images from a given dataloader using the model's encoder.
 
         Args:
             dataloader (torch.utils.data.DataLoader): DataLoader providing batches of cover images.
             dest_path (str): Directory path where the generated stego images will be saved.
-            file_type (str, optional): File extension/type for the saved images (e.g., "jpg", "png"). Defaults to "jpg".
+            file_names (list): List of filenames to use when saving the generated stego images.
 
         Notes:
             - The method sets the model to evaluation mode and disables gradient computation.
@@ -82,7 +82,7 @@ class Inferer(object):
                     stego_img = stego_torch[i].clamp(-1.0, 1.0).permute(1, 2, 0)
                     stego_img = (stego_img.detach().cpu().numpy() + 1.0) / 2.0 * 255.0
                     imageio.imwrite(
-                        os.path.join(dest_path, f"{im_idx}.{file_type}"),
+                        os.path.join(dest_path, f"{file_names[im_idx]}"),
                         stego_img.astype("uint8"),
                     )
 
