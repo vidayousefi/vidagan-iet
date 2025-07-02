@@ -26,10 +26,13 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--epochs", default=16, type=int)
     parser.add_argument("--data_depth", default=6, type=int)
-    parser.add_argument("--train_dataset", default="", type=str)
-    parser.add_argument("--val_dataset", default="", type=str)
+    parser.add_argument("--source_path", default="", type=str)
+    parser.add_argument("--dest_path", default="", type=str)
+    parser.add_argument("--model_path", default="", type=str)
     parser.add_argument("--batch_size", default=4, type=int)
-    parser.add_argument('--dev_mode', default=False, action=argparse.BooleanOptionalAction)
+    parser.add_argument(
+        "--dev_mode", default=False, action=argparse.BooleanOptionalAction
+    )
     # parser.add_argument('--resume', type=str)
     # parser.add_argument('--resume-epoch', type=int, default=-1)
     args = parser.parse_args()
@@ -65,7 +68,7 @@ def main():
         writer_dir=writer_dir,
         net_dir=net_dir,
         sample_dir=sample_dir,
-        dev_mode=args.dev_mode
+        dev_mode=args.dev_mode,
     )
 
     trainer.fit(train, validation, epochs=args.epochs)
