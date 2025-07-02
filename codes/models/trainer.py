@@ -9,8 +9,8 @@ from os.path import isfile
 
 import imageio.v2 as imageio
 import torch
-from PIL import Image
 from imageio import imwrite
+from PIL import Image
 from prettytable import PrettyTable
 from torch import sigmoid
 from torch.nn.functional import binary_cross_entropy_with_logits, mse_loss
@@ -52,7 +52,17 @@ class Trainer(object):
 
     # ============================================== Lifecycle =======================================
 
-    def __init__(self, data_depth, coder, critic, log_dir, writer_dir, net_dir, sample_dir, dev_mode):
+    def __init__(
+        self,
+        data_depth,
+        coder,
+        critic,
+        log_dir,
+        writer_dir,
+        net_dir,
+        sample_dir,
+        dev_mode,
+    ):
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model = MainGan(data_depth, coder, critic, self.device)
@@ -214,7 +224,9 @@ class Trainer(object):
 
     def validate(self, metrics, val_loader):
         self._validate(val_loader, metrics)
-        aggregate_metrics = {k: sum(v) / len(v) for k, v in metrics.items() if len(v) > 0}
+        aggregate_metrics = {
+            k: sum(v) / len(v) for k, v in metrics.items() if len(v) > 0
+        }
         aggregate_metrics["epoch"] = self.val_idx
         self.metric_history.append(aggregate_metrics)
         # log tensorboard
@@ -366,9 +378,9 @@ class Trainer(object):
                     cover_path = os.path.join(samples_path, f"{im_idx}.cover.png")
                     if not isfile(cover_path):
                         cover_img = (
-                                (cover[i].permute(1, 2, 0).detach().cpu().numpy() + 1.0)
-                                / 2.0
-                                * 255.0
+                            (cover[i].permute(1, 2, 0).detach().cpu().numpy() + 1.0)
+                            / 2.0
+                            * 255.0
                         )
                         imageio.imwrite(cover_path, cover_img.astype("uint8"))
 
@@ -382,7 +394,7 @@ class Trainer(object):
     # ============================================== Optimiser =======================================
 
     def _get_optimizers(
-            self, lr, weight_decay, start_epoch, total_epochs, iters_per_epoch
+        self, lr, weight_decay, start_epoch, total_epochs, iters_per_epoch
     ):
         critic_optimizer, critic_scheduler = self._create_optimizer(
             self.model.critic_params(),
@@ -406,7 +418,7 @@ class Trainer(object):
 
     @staticmethod
     def _create_optimizer(
-            parameters, lr, weight_decay, start_epoch, total_epochs, iters_per_epoch
+        parameters, lr, weight_decay, start_epoch, total_epochs, iters_per_epoch
     ):
         # if total_iterations > 0 and warmup_iterations > 0:
         #     optimizer = SGD(parameters, lr=lr, weight_decay=weight_decay, momentum=0.9, nesterov=True)

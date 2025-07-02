@@ -1,0 +1,273 @@
+# -*- coding: utf-8 -*-
+import json
+import math
+import os
+import pickle
+import time
+from collections import Counter
+from os.path import isfile
+
+import imageio.v2 as imageio
+import torch
+from imageio import imwrite
+from PIL import Image
+from prettytable import PrettyTable
+from torch import sigmoid
+from torch.nn.functional import binary_cross_entropy_with_logits, mse_loss
+from torch.optim import Adam
+from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
+
+from codes.data.augment import Augmentation
+from codes.misc.utils import (
+    bits_to_bytearray,
+    bytearray_to_text,
+    linear_fit,
+    ssim,
+    text_to_bits,
+)
+from codes.models.gan import MainGan
+from codes.optimization.scheduler import CustomScheduler, SchedulerStage
+
+
+class Inferer(object):
+
+    # ============================================== Lifecycle =======================================
+
+    def __init__(self, model_file, data_depth, coder, critic):
+
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.model = MainGan(data_depth, coder, critic, self.device)
+        self.model.load_state_dict(torch.load(model_file))
+        self.data_depth = data_depth
+
+    # ============================================== Samples =======================================
+
+    def create_random_stegos(self, dataloader, dest_path, file_type="jpg"):
+        self.model.eval()
+        with torch.no_grad():
+            for batch_idx, cover in enumerate(tqdm(dataloader)):
+                cover = cover.to(self.device)
+                stego_torch, _ = self._forward_encoder(cover, True)
+                batch_size = stego_torch.size(0)
+                for i in range(batch_size):
+                    im_idx = batch_idx * batch_size + i
+                    stego_img = stego_torch[i].clamp(-1.0, 1.0).permute(1, 2, 0)
+                    stego_img = (stego_img.detach().cpu().numpy() + 1.0) / 2.0 * 255.0
+                    imageio.imwrite(
+                        os.path.join(dest_path, f"{im_idx}.{file_type}"),
+                        stego_img.astype("uint8"),
+                    )
+
+    # ============================================== Forward =======================================
+
+    def _forward_coders(self, cover, quantize=False):
+        stego, payload = self._forward_encoder(cover, quantize)
+
+        decoded = self.model.decoder(stego, None)
+
+        return stego, payload, decoded
+
+    def _forward_encoder(self, cover, quantize):
+        payload = self._random_payload(cover.size())
+        stego = self.model.encoder(cover, payload)
+        if quantize:
+            stego = (255.0 * (stego + 1.0) / 2.0).long()
+            stego = 2.0 * stego.float() / 255.0 - 1.0
+        return stego, payload
+
+    def _forward_critic(self, image):
+        """Evaluate the image using the critic"""
+        return torch.mean(self.model.critic(image))
+
+    # ============================================== Loss =======================================
+
+    @staticmethod
+    def _coders_loss(cover, generated, payload, decoded):
+        encoder_mse = mse_loss(generated, cover)
+        decoder_loss = binary_cross_entropy_with_logits(decoded, payload)
+        decoder_sigmoid = sigmoid(decoded)
+        soft_label_loss = 0.15 * ((decoder_sigmoid * 2 - 1) ** 4).mean()
+        decoder_loss = decoder_loss + soft_label_loss
+        decoder_acc = (decoded >= 0.0).eq(
+            payload >= 0.5
+        ).sum().float() / payload.numel()
+
+        return encoder_mse, decoder_loss, decoder_acc
+
+    def _calc_encoder_ratio(self, encoder_mse, tgt, smoother):
+        target_mse = math.log(tgt, 10)
+        mse_hist = self.encoder_mse_history
+        mse_hist.append(math.log(encoder_mse.item(), 10))
+        points_count = 80
+        if len(mse_hist) < points_count:
+            self.ratio = 0.01
+        else:
+            mse_hist = mse_hist[-points_count:]
+
+            xs = 0.2
+            mp, bp = linear_fit([i * xs for i in range(points_count)], mse_hist)
+            mp = min(max(mp, -1), 1)
+            # mt, bt = linear_fit(
+            #     [(points_count - 1) / 2 * xs, ((points_count - 1) / 2 + 60 * (6 if smoother else 2)) * xs],
+            #     [sum(mse_hist) / points_count, target_mse])
+            mt, bt = linear_fit(
+                [(points_count - 1) / 2 * xs, ((points_count - 1) / 2 + 60 * 2) * xs],
+                [sum(mse_hist) / points_count, target_mse],
+            )
+            mt = min(max(mt, -1), 1)
+            self.ratio *= 1 + (mt - mp)
+            self.ratio = min(max(self.ratio, 0.005), 2)
+
+    # ============================================== Prediction =======================================
+
+    def encode(self, cover, output, text):
+        cover = Augmentation.val_transform(Image.open(cover).convert("RGB"))
+        cover = torch.FloatTensor(cover).permute(2, 1, 0).unsqueeze(0).to(self.device)
+
+        cover_size = cover.size()
+        payload = self._make_payload_by_text(
+            cover_size[3], cover_size[2], self.data_depth, text
+        ).to(self.device)
+
+        stego = self.model.encoder(cover, payload)[0].clamp(-1.0, 1.0)
+
+        stego = (stego.permute(2, 1, 0).detach().cpu().numpy() + 1.0) * 127.5
+        imwrite(output, stego.astype("uint8"))
+
+        print("Encoding completed.")
+
+    def decode(self, image):
+        # extract a bit vector
+        image = Augmentation.val_transform(Image.open(image).convert("RGB"))
+        image = torch.FloatTensor(image).permute(2, 1, 0).unsqueeze(0).to(self.device)
+        image = self.model.decoder(image).view(-1) > 0
+
+        # split and decode messages
+        candidates = Counter()
+        bits = image.data.int().cpu().numpy().tolist()
+        for candidate in bits_to_bytearray(bits).split(b"\x00\x00\x00\x00"):
+            candidate = bytearray_to_text(bytearray(candidate))
+            if candidate:
+                candidates[candidate] += 1
+
+        # choose most common message
+        if len(candidates) == 0:
+            raise ValueError("Failed to find message.")
+
+        candidate, count = candidates.most_common(1)[0]
+        return candidate
+
+    # ============================================== Optimiser =======================================
+
+    def _get_optimizers(
+        self, lr, weight_decay, start_epoch, total_epochs, iters_per_epoch
+    ):
+        critic_optimizer, critic_scheduler = self._create_optimizer(
+            self.model.critic_params(),
+            lr,
+            weight_decay,
+            start_epoch,
+            total_epochs,
+            iters_per_epoch,
+        )
+
+        decoder_optimizer, decoder_scheduler = self._create_optimizer(
+            self.model.coder_params(),
+            lr,
+            weight_decay,
+            start_epoch,
+            total_epochs,
+            iters_per_epoch,
+        )
+
+        return critic_optimizer, critic_scheduler, decoder_optimizer, decoder_scheduler
+
+    @staticmethod
+    def _create_optimizer(
+        parameters, lr, weight_decay, start_epoch, total_epochs, iters_per_epoch
+    ):
+        # if total_iterations > 0 and warmup_iterations > 0:
+        #     optimizer = SGD(parameters, lr=lr, weight_decay=weight_decay, momentum=0.9, nesterov=True)
+        #     if warmup_iterations > 0:
+        #         scheduler = LambdaLR(
+        #             optimizer, lambda i: min(i / warmup_iterations, 1) * cos(
+        #                 max(i, warmup_iterations) / total_iterations * pi / 2))
+        #     else:
+        #         scheduler = CosineAnnealingLR(optimizer, total_iterations)
+        # else:
+        #     optimizer = Adam(parameters, lr=lr, weight_decay=weight_decay)
+        #     if warmup_iterations > 0:
+        #         scheduler = LambdaLR(
+        #             optimizer, lambda i: min(i / warmup_iterations, 1) * cos(
+        #                 max(i, warmup_iterations) / total_iterations * pi / 2))
+        #     else:
+        #         scheduler = CosineAnnealingLR(optimizer, total_iterations)
+        #     # scheduler = ConstantLR(optimizer, factor=1, total_iters=total_iterations)
+        optimizer = Adam(parameters, lr=lr, weight_decay=weight_decay)
+        scheduler = CustomScheduler(
+            optimizer,
+            [
+                SchedulerStage("linear", (0.1, 1), 1),
+                SchedulerStage("linear", (1, 0.75), 2, True),
+                # SchedulerStage('constant', 1, 2, True),
+                # SchedulerStage('constant', 1, 2, True),
+                # SchedulerStage('linear', (1, 0.3), 10),
+                # SchedulerStage('linear', (0.3, 1), 12),
+                # SchedulerStage('constant', 1, 14, True),
+                # SchedulerStage('linear', (1, 0.3), 16),
+                # SchedulerStage('linear', (0.3, 1), 18),
+                # SchedulerStage('cosine', 1, 2, True),
+            ],
+            total_epochs,
+            iters_per_epoch,
+            start_epoch,
+        )
+
+        return optimizer, scheduler
+
+    # ============================================== Logging =======================================
+
+    @staticmethod
+    def log_tensorboard(idx, interval, metrics_list, scores):
+        if idx % interval == 0:
+            for score in scores:
+                lst = metrics_list[score][-interval:]
+                Trainer.writer.add_scalar(score, sum(lst) / len(lst), idx)
+
+    # ============================================== Payload =======================================
+
+    def _random_payload(self, size):
+        N, _, H, W = size
+        return torch.zeros((N, self.data_depth, H, W), device=self.device).random_(0, 2)
+
+    @staticmethod
+    def _make_payload_by_text(width, height, depth, text):
+        """
+        This takes a piece of text and encodes it into a bit vector. It then
+        fills a matrix of size (width, height) with copies of the bit vector.
+        """
+        message = text_to_bits(text) + [0] * 32
+
+        payload = message
+        while len(payload) < width * height * depth:
+            payload += message
+
+        payload = payload[: width * height * depth]
+
+        return torch.FloatTensor(payload).view(1, depth, height, width)
+
+    # ============================================== Manipulation =======================================
+
+    def count_parameters(self, model):
+        table = PrettyTable(["Modules", "Parameters"])
+        total_params = 0
+        for name, parameter in model.named_parameters():
+            if not parameter.requires_grad:
+                continue
+            params = parameter.numel()
+            table.add_row([name, params])
+            total_params += params
+        print(table)
+        print(f"Total Trainable Params: {total_params}")
+        return total_params

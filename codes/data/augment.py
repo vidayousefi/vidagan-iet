@@ -10,7 +10,7 @@ class Augmentation:
     val_transform = None
 
     @classmethod
-    def _get_train_transform(cls, augment):
+    def _get_train_transform(cls):
         return transforms.Compose(
             [
                 transforms.RandomHorizontalFlip(),
@@ -22,5 +22,11 @@ class Augmentation:
 
     @classmethod
     def calc_transform(cls):
-        cls.train_transform = cls._get_train_transform(False)
-        cls.val_transform = cls._get_train_transform(False)
+        cls.train_transform = cls._get_train_transform()
+        cls.val_transform = cls._get_train_transform()
+        cls.infer_transform = transforms.Compose(
+            [
+                transforms.ToTensor(),
+                transforms.Normalize(_DEFAULT_MU, _DEFAULT_SIGMA),
+            ]
+        )
