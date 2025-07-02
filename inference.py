@@ -15,9 +15,10 @@ from codes.models.trainer import Trainer
 
 
 def prepare_data(dir):
-    dataset = Div2kDataset(dir, Augmentation.val_transform)
+    dataset = Div2kDataset(dir, Augmentation.infer_transform)
     loader = DataLoader(dataset, batch_size=4, num_workers=4, shuffle=False)
-    return loader
+    file_names = dataset.img_paths
+    return loader, file_names
 
 
 def parse_args():
@@ -25,7 +26,6 @@ def parse_args():
     parser.add_argument("--data_depth", default=6, type=int)
     parser.add_argument("--source_path", default="", type=str)
     parser.add_argument("--dest_path", default="", type=str)
-    parser.add_argument("--file_type", default="jpg", type=str)
     parser.add_argument("--model_path", default="", type=str)
     parser.add_argument("--batch_size", default=4, type=int)
     args = parser.parse_args()
@@ -41,7 +41,7 @@ def main():
     os.makedirs(dest_dir, exist_ok=True)
 
     Augmentation.calc_transform()
-    val_loader = prepare_data(args.source_path)
+    val_loader, file_names = prepare_data(args.source_path)
 
     inferer = Inferer(
         model_file=args.model_path,
@@ -50,7 +50,7 @@ def main():
         critic=BasicCritic,
     )
 
-    inferer.create_random_stegos(val_loader, args.dest_path, args.file_type)
+    inferer.create_random_stegos(val_loader, args.dest_path, file_names)
 
 
 if __name__ == "__main__":

@@ -1,13 +1,16 @@
 # -*- coding: utf-8 -*-
 import os
 from os.path import isfile, join
+
 from PIL import Image
 from torch.utils.data import Dataset
 
 
 class Div2kDataset(Dataset):
     def __init__(self, img_dir, transform=None):
-        self.img_paths = sorted([f for f in os.listdir(img_dir) if isfile(join(img_dir, f))])
+        self.img_paths = sorted(
+            [f for f in os.listdir(img_dir) if isfile(join(img_dir, f))]
+        )
         # self.img_paths = self.img_paths[:20]
         self.img_dir = img_dir
         self.transform = transform
