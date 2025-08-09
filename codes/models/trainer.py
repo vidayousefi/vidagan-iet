@@ -142,7 +142,7 @@ class Trainer(object):
 
             # save model
             torch.save(
-                self.model.state_dict(), os.path.join(self.net_dir, f"model-{ep}.pth")
+                self.model.state_dict(), os.path.join(self.net_dir, f"model-latest.pth")
             )
 
             # generate sample images in samples folder

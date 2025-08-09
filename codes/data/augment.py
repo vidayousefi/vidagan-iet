@@ -15,7 +15,7 @@ class Augmentation:
         return transforms.Compose(
             [
                 transforms.RandomHorizontalFlip(),
-                # transforms.RandomCrop(250, pad_if_needed=True),
+                transforms.RandomCrop(250, pad_if_needed=True),
                 transforms.ToTensor(),
                 transforms.Normalize(_DEFAULT_MU, _DEFAULT_SIGMA),
             ]
@@ -27,6 +27,7 @@ class Augmentation:
         cls.val_transform = cls._get_train_transform()
         cls.infer_transform = transforms.Compose(
             [
+                transforms.RandomCrop(250, pad_if_needed=True),
                 transforms.ToTensor(),
                 transforms.Normalize(_DEFAULT_MU, _DEFAULT_SIGMA),
             ]

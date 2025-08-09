@@ -33,22 +33,11 @@ Additional Parameters:
  --batch_size,      default=4
  
 
-Generate samples:
+Generate random stego images:
 ```bash
-python generate.py --model checkpoints/your_model.pth
+python inference.py --source_path=COVER_IMAGE_DIR --dest_path=GENERATED_STEGO_DIR --model_path=PATH_TO_TRAIED_MODEL --data_depth=DATA_DEPTH_OF_TRAINED_MODEL
 ```
-
-## Requirements
-
-- Python 3.7+
-- PyTorch
-- Other dependencies in `requirements.txt`
 
 ## License
 
 This project is licensed under the MIT License.
-
-## Acknowledgements
-
-- Based on research in generative modeling and GANs.
-- Inspired by leading open-source GAN repositories.
