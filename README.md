@@ -26,6 +26,10 @@ python train.py --train_dataset=PATH_TO_TRAIN_IMAGES --val_dataset=PATH_TO_VAL_I
 
 Additional Parameters:
 
+ --epochs"          default=16
+ --data_depth"      default=6
+ --batch_size"      default=4
+ 
 
 Generate samples:
 ```bash
