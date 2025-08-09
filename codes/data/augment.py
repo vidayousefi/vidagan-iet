@@ -8,6 +8,7 @@ _DEFAULT_SIGMA = 0.5
 class Augmentation:
     train_transform = None
     val_transform = None
+    infer_transform = None
 
     @classmethod
     def _get_train_transform(cls):
