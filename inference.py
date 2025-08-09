@@ -38,7 +38,8 @@ def main():
     args = parse_args()
 
     dest_dir = args.dest_path
-    os.makedirs(dest_dir, exist_ok=True)
+    os.makedirs(os.path.join(dest_dir, "cover"), exist_ok=True)
+    os.makedirs(os.path.join(dest_dir, "stego"), exist_ok=True)
 
     Augmentation.calc_transform()
     val_loader, file_names = prepare_data(args.source_path)
@@ -50,7 +51,7 @@ def main():
         critic=BasicCritic,
     )
 
-    inferer.create_random_stegos(val_loader, args.dest_path, file_names)
+    inferer.create_random_stegos(val_loader, dest_dir, file_names)
 
 
 if __name__ == "__main__":

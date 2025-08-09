@@ -71,6 +71,8 @@ class Inferer(object):
             - Each stego image is clamped to the valid range, converted to a NumPy array, and saved to disk.
             - Images are saved with filenames based on their index in the dataset.
         """
+        cover_path = os.path.join(dest_path, "cover")
+        stego_path = os.path.join(dest_path, "stego")
         self.model.eval()
         with torch.no_grad():
             for batch_idx, cover in enumerate(tqdm(dataloader)):
@@ -79,12 +81,16 @@ class Inferer(object):
                 batch_size = stego_torch.size(0)
                 for i in range(batch_size):
                     im_idx = batch_idx * batch_size + i
-                    stego_img = stego_torch[i].clamp(-1.0, 1.0).permute(1, 2, 0)
-                    stego_img = (stego_img.detach().cpu().numpy() + 1.0) / 2.0 * 255.0
-                    imageio.imwrite(
-                        os.path.join(dest_path, f"{file_names[im_idx]}"),
-                        stego_img.astype("uint8"),
-                    )
+                    self.write_image(file_names[im_idx], cover_path, cover, i)
+                    self.write_image(file_names[im_idx], stego_path, stego_torch, i)
+
+    def write_image(self, file_name, dest_path, tensor, i):
+        stego_img = tensor[i].clamp(-1.0, 1.0).permute(1, 2, 0)
+        stego_img = (stego_img.detach().cpu().numpy() + 1.0) / 2.0 * 255.0
+        imageio.imwrite(
+            os.path.join(dest_path, f"{file_name}"),
+            stego_img.astype("uint8"),
+        )
 
     # ============================================== Forward =======================================
 
