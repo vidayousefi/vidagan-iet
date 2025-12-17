@@ -1,4 +1,4 @@
-# vidaGAN
+# VidaGAN
 
 vidaGAN is a deep learning project focused on Generative Adversarial Networks (GANs) for image and video synthesis. This repository contains code, models, and documentation to help you train and evaluate GANs for various generative tasks.
 
