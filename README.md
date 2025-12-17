@@ -7,13 +7,13 @@ A recent approach to image steganography is to use deep learning. Mainly, convol
 
 If you use this code or repository in your research, please cite the following paper:
 
-**Vida Yousefi Ramandi, Mansoor Fateh.** "VidaGAN: Adaptive GAN for image steganography." *IET Image Processing*, vol. 18, no. 12, pp. 3329–3342, 2024. DOI: [10.1049/ipr2.13177](https://doi.org/10.1049/ipr2.13177)
+**Vida Yousefi Ramandi, Mansoor Fateh, Mohsen Rezvani.** "VidaGAN: Adaptive GAN for image steganography." *IET Image Processing*, vol. 18, no. 12, pp. 3329–3342, 2024. DOI: [10.1049/ipr2.13177](https://doi.org/10.1049/ipr2.13177)
 
 ### BibTeX
 ```bibtex
 @article{yousefi2024vidagan,
   title = {VidaGAN: Adaptive GAN for image steganography},
-  author = {Yousefi Ramandi, Vida and Fateh, Mansoor},
+  author = {Yousefi Ramandi, Vida and Fateh, Mansoor and Rezvani, Mohsen},
   journal = {IET Image Processing},
   volume = {18},
   number = {12},
